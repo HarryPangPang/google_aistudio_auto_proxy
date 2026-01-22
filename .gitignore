@@ -11,3 +11,4 @@ codedist
 chrome-profile
 .demo
 extracted
+package-lock.json
