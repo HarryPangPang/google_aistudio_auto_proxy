@@ -1,15 +1,11 @@
 const { chromium } = require('playwright');
 const path = require('path');
-const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-
+const { CHROME_PATH, USER_DATA_DIR, AI_STUDIO_URL } = require('./constant');
 (async () => {
 
-  const userDataDir = path.resolve('./chrome-profile');
-
-  const browser = await chromium.launchPersistentContext(userDataDir, {
+  const browser = await chromium.launchPersistentContext(USER_DATA_DIR, {
     headless: false,
-
-    executablePath: chromePath,
+    executablePath: CHROME_PATH,
 
     args: [
       '--disable-blink-features=AutomationControlled',
@@ -22,7 +18,7 @@ const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 
   const page = await browser.newPage();
 
-  await page.goto('https://aistudio.google.com/apps/drive/1DjJtbbdHp76qwU0ynCalJxlnfuq5-1ul?showAssistant=true&showCode=true');
+  await page.goto(AI_STUDIO_URL);
 
   console.log('👉 请手动登录 Google');
 

@@ -4,14 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const AdmZip = require('adm-zip');
 const { spawn } = require('child_process');
-
-let browser;
-// Chrome 用户数据目录（保存登录态）
-const userDataDir = path.resolve('./chrome-profile');
-
-// Chrome 路径（按你系统修改）
-// const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const { USER_DATA_DIR, CHROME_PATH, AI_STUDIO_URL, AI_STUDIO_HOME_URL } = require('../constant');
 
 let context;
 let page = null;
@@ -19,9 +12,9 @@ let page = null;
 const initBrowserPage = async () => {
   console.log('Launching browser...');
   if (!context || !context.newPage) {
-    context = await chromium.launchPersistentContext(userDataDir, {
+    context = await chromium.launchPersistentContext(USER_DATA_DIR, {
       headless: false, // Google 登录必须 false
-      executablePath: chromePath,
+      executablePath: CHROME_PATH,
 
       args: [
         '--disable-blink-features=AutomationControlled',
@@ -37,12 +30,89 @@ const initBrowserPage = async () => {
   }
   console.log('Browser ready');
   const _page = await context.newPage();
+  console.log('page open');
   page = _page
   return page
 }
 
-const goAistudio = async (page) => {
-  await page.goto('https://aistudio.google.com/apps/drive/1DjJtbbdHp76qwU0ynCalJxlnfuq5-1ul?showAssistant=true&showCode=true');
+const initChatContent = async (page, prompt) => {
+  await page.goto(AI_STUDIO_HOME_URL);
+  await page.waitForLoadState('networkidle', { timeout: 1000 * 60 * 5 });
+  // 先找到输入框，然后输入promot，然后点击Build按钮
+  console.log('开始初始化聊天内容...');
+  const errorSelector = '.error-title';
+  const checkFatalError = async () => {
+    try {
+      const errorTitle = page.locator(errorSelector).first();
+      if (await errorTitle.isVisible()) {
+        const text = (await errorTitle.innerText()).trim();
+        throw new Error(text || 'An internal error occurred.');
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message) {
+        throw err;
+      }
+    }
+  };
+
+  const input = page.locator('textarea[aria-label="Enter a prompt to generate an app"], textarea.prompt-textarea, textarea').first();
+  await input.waitFor({ state: 'visible', timeout: 30000 });
+  await input.fill(prompt);
+  await page.waitForTimeout(300);
+  console.log('输入框输入完成...');
+  // Build 按钮（新建场景）
+  const buildButton = page.locator('button.ms-button-primary:has-text("Build"), button:has-text("Build")').first();
+  await buildButton.waitFor({ state: 'visible', timeout: 300000 });
+  await page.waitForFunction(() => {
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const btn = buttons.find((b) => {
+      const text = (b.textContent || '').trim();
+      return b.classList.contains('ms-button-primary') || text === 'Build';
+    });
+    return btn && btn.getAttribute('aria-disabled') !== 'true';
+  }, { timeout: 30000 });
+  await buildButton.click();
+  await page.waitForTimeout(500);
+  await checkFatalError();
+
+  // 点击后会先跳到 /apps/temp/xxx，然后再跳到 /apps/drive/xxx
+  // 优先等待 drive，如果已经跳转就直接继续，避免长时间阻塞
+  const currentUrl = page.url();
+  if (!/\/apps\/drive\/[^?]+/.test(currentUrl)) {
+    // 先等到 temp 或 drive 任意一个出现
+    await page.waitForURL(/\/apps\/(temp|drive)\//, { timeout: 1000 * 60 * 2 });
+    // 如果还没到 drive，再单独等 drive（短一些）
+    if (!/\/apps\/drive\/[^?]+/.test(page.url())) {
+      await page.waitForURL(/\/apps\/drive\/[^?]+/, { timeout: 1000 * 60 * 2 });
+    }
+  }
+  await checkFatalError();
+
+  // 等待运行状态结束（同 sendChatMsg 逻辑）
+  try {
+    await page.locator('button .running-icon').waitFor({ state: 'visible', timeout: 5000 });
+    console.log('[GoogleStudio] Generation running...');
+  } catch (e) {
+    console.log('[GoogleStudio] Generation might have finished quickly or running state missed.');
+  }
+  await checkFatalError();
+  await page.locator('button .running-icon').waitFor({ state: 'detached', timeout: 300000 });
+  console.log('[GoogleStudio] Generation complete. Fetching chat content...');
+  await page.waitForTimeout(1000); // Stabilization
+
+  await checkFatalError();
+  const chatDomContent = await getChatDomContent(page, true);
+  const finalUrl = page.url();
+  const driveIdMatch = finalUrl.match(/\/apps\/drive\/([^?]+)/);
+  const driveid = driveIdMatch ? driveIdMatch[1] : '';
+  return {
+    chatDomContent,
+    driveid
+  };
+}
+const goAistudio = async (page, driveid) => {
+  const url = AI_STUDIO_URL.replace('{driveid}', driveid);
+  await page.goto(url);
 
   // 等待页面加载完成
   // await page.waitForLoadState('networkidle');
@@ -344,4 +414,5 @@ module.exports = {
   runInstallBuild: runInstallBuild,
   getChatDomContent: getChatDomContent,
   sendChatMsg: sendChatMsg,
+  initChatContent:initChatContent,
 }

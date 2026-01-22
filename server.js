@@ -4,19 +4,16 @@ const bodyParser = require('koa-bodyparser');
 const cors = require('@koa/cors');
 const axios = require('axios');
 const AdmZip = require('adm-zip');
-const fs = require('fs');
-const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const PREVIEW_URL = 'http://localhost:1234';
 const { 
     initBrowserPage, 
     goAistudio, 
     downloadCode,
-    runInstallBuild,
-    extraPath,
     getChatDomContent,
-    sendChatMsg
+    sendChatMsg,
+    initChatContent
  } = require('./operateChrome/index');
+ const { PREVIEW_URL } = require('./constant');
 
 const app = new Koa();
 const router = new Router();
@@ -25,11 +22,6 @@ const PORT = 8080;
 app.use(cors());
 app.use(bodyParser());
 
-// Configuration
-const AI_STUDIO_URL = 'https://aistudio.google.com/apps/drive/1DjJtbbdHp76qwU0ynCalJxlnfuq5-1ul?showAssistant=true&showCode=true'; // Replace with your specific project URL if needed
-const USER_DATA_DIR = path.resolve('./chrome-profile');
-// const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'; // Adjust for your OS
-const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 
 const initBrowser = async ()=>{
 
@@ -165,7 +157,6 @@ router.post('/api/task', async (ctx) => {
 
         // 7. Send to Preview
         console.log('[GoogleStudio] Uploading to Preview Service...');
-        const PREVIEW_URL = 'http://localhost:1234'; 
         const deployRes = await axios.post(`${PREVIEW_URL}/api/deploy`, { files });
 
         ctx.body = { 
@@ -182,6 +173,7 @@ router.post('/api/task', async (ctx) => {
 });
 // 获取聊天内容
 router.get('/api/chatcontent', async(ctx)=>{
+    const {driveid} = ctx.query;
     const page = await initBrowserPage()
     await goAistudio(page)
     const chatDomContent = await getChatDomContent(page, true)
@@ -205,6 +197,17 @@ router.post('/api/chatmsg', async(ctx)=>{
         chatDomContent: chatDomContent
     }
 })
+
+router.post('/api/initChatContent', async (ctx) => {
+    const {prompt} = ctx.request.body;
+    const page = await initBrowserPage()
+    const res = await initChatContent(page, prompt)
+    ctx.body = {
+        success: true,
+        message: 'Aistudio initialized',
+        data: res
+    }
+})
 // 下载代码
 router.get('/api/download', async (ctx) => {
     const { url } = ctx.request.body;
@@ -225,9 +228,11 @@ router.get('/api/download', async (ctx) => {
 
 router.post('/api/deploywithcode', async (ctx) => {
     const { data } = ctx.request.body;
+    console.log('[GoogleStudio] Deploy with code request received: ', data);
     try {
         const page = await initBrowserPage()
-        await goAistudio(page)
+        console.log('[GoogleStudio] Deploy with code request received: ', data);
+        await goAistudio(page, data.id)
         const uuid = uuidv4()
         const res = await downloadCode(page, uuid)
         await axios.post(`${PREVIEW_URL}/api/buildcode`, { data: {
