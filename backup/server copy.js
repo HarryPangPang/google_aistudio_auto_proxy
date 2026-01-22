@@ -10,7 +10,8 @@ const { chromium } = require('playwright');
 
 const app = new Koa();
 const router = new Router();
-const PORT = 1234;
+const PORT = 1111;
+const PREVIEW_URL = 'http://localhost:80'; 
 
 app.use(cors());
 app.use(bodyParser());
@@ -179,7 +180,6 @@ router.post('/api/task', async (ctx) => {
 
         // 7. Send to Preview
         console.log('[GoogleStudio] Uploading to Preview Service...');
-        const PREVIEW_URL = 'http://localhost:1234'; 
         const deployRes = await axios.post(`${PREVIEW_URL}/api/deploy`, { files });
 
         ctx.body = { 

@@ -6,7 +6,7 @@ console.log(process.platform);
  const USER_DATA_DIR = path.resolve('./chrome-profile');
 // export const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
  const  CHROME_PATH = isWindows ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
- const PREVIEW_URL = 'http://localhost:1234';
+ const PREVIEW_URL = 'http://localhost:80';
 module.exports = {
     AI_STUDIO_URL,
     USER_DATA_DIR,
