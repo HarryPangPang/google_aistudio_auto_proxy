@@ -11,7 +11,8 @@ const {
     downloadCode,
     getChatDomContent,
     sendChatMsg,
-    initChatContent
+    initChatContent,
+    initializeBrowser
  } = require('./operateChrome/index');
  const { PREVIEW_URL } = require('./constant');
 
@@ -21,7 +22,7 @@ const PORT = 1234;
 
 app.use(cors());
 app.use(bodyParser());
-
+initializeBrowser()
 
 const initBrowser = async ()=>{
 
@@ -176,6 +177,8 @@ router.get('/api/chatcontent', async(ctx)=>{
     const {driveid} = ctx.query;
     const page = await initBrowserPage()
     await goAistudio(page,driveid)
+    // 增加等待时间，防止页面加载过快导致获取不到内容
+    await page.waitForTimeout(2000); 
     const chatDomContent = await getChatDomContent(page, true)
     ctx.body = {
         success: true,
