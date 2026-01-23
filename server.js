@@ -217,7 +217,7 @@ router.get('/api/download', async (ctx) => {
         const page = await initBrowserPage()
         await goAistudio(page)
         const res = await downloadCode(page)
-        const chatDomContent = await getChatDomContent(page)
+        const chatDomContent = await getChatDomContent(page, true, true)
         return res
     }catch(err) {
         console.error('[GoogleStudio] Error:', err);

@@ -101,7 +101,9 @@ const initChatContent = async (page, prompt) => {
   await page.waitForTimeout(1000); // Stabilization
 
   await checkFatalError();
+  console.log('page.url()', page.url());
   const chatDomContent = await getChatDomContent(page, true);
+  console.log('chatDomContent', chatDomContent);
   const finalUrl = page.url();
   const driveIdMatch = finalUrl.match(/\/apps\/drive\/([^?]+)/);
   const driveid = driveIdMatch ? driveIdMatch[1] : '';
@@ -113,10 +115,6 @@ const initChatContent = async (page, prompt) => {
 const goAistudio = async (page, driveid) => {
   const url = AI_STUDIO_URL.replace('{driveid}', driveid);
   await page.goto(url);
-
-  // 等待页面加载完成
-  // await page.waitForLoadState('networkidle');
-
   // 等待页面核心元素加载完成
   console.log('等待 Send 按钮出现，确认页面已就绪...');
   const sendButton = page.locator('button[aria-label="Send"]');
@@ -313,7 +311,7 @@ const runInstallBuild = async (sourceDir) => {
   });
 }
 
-const getChatDomContent = async (page, needClose) => {
+const getChatDomContent = async (page, needClose, needWait) => {
   const close = () => {
     if (needClose) {
       page.close()
@@ -321,7 +319,10 @@ const getChatDomContent = async (page, needClose) => {
     }
 
   }
-  await page.waitForLoadState('networkidle', { timeout: 1000 * 60 * 5 });
+  if(needWait){
+    await page.waitForLoadState('networkidle', { timeout: 1000 * 60 * 5 });
+  }
+  console.log('开始获取聊天内容...');
   // 等待.output-container元素出现
   await page.waitForSelector('.output-container', { state: 'visible', timeout: 1000 * 60 * 5 });
   console.log('output-container元素已出现');
