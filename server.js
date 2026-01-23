@@ -175,7 +175,7 @@ router.post('/api/task', async (ctx) => {
 router.get('/api/chatcontent', async(ctx)=>{
     const {driveid} = ctx.query;
     const page = await initBrowserPage()
-    await goAistudio(page)
+    await goAistudio(page,driveid)
     const chatDomContent = await getChatDomContent(page, true)
     ctx.body = {
         success: true,
@@ -238,7 +238,8 @@ router.post('/api/deploywithcode', async (ctx) => {
         await axios.post(`${PREVIEW_URL}/api/buildcode`, { data: {
             fileName: res?.fileName,
             targetPath: res?.targetPath,
-            id: uuid
+            uuid: uuid,
+            driveid: data.id
         } })
         ctx.body = {
             success: true,
