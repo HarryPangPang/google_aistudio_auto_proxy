@@ -185,16 +185,16 @@ router.get('/api/chatcontent', async(ctx)=>{
 })
 // 发送聊天消息
 router.post('/api/chatmsg', async(ctx)=>{
-    const { prompt } = ctx.request.body;
+    const { driveid, prompt } = ctx.request.body;
     const page = await initBrowserPage()
-    await goAistudio(page)
-    
+    await goAistudio(page, driveid)
     await sendChatMsg(page, prompt)
     const chatDomContent = await getChatDomContent(page, true)
     ctx.body = {
         success: true,
         message: 'Chat content fetched',
-        chatDomContent: chatDomContent
+        chatDomContent: chatDomContent,
+        driveid
     }
 })
 
