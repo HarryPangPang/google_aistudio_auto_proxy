@@ -217,11 +217,27 @@ router.get('/api/download', async (ctx) => {
     console.log(`[GoogleStudio] Received download request for: ${url}`);
 
     try {
+        const driveid = url.match(/\/apps\/drive\/([^?/]+)/)?.[1];
+        if (!driveid) {
+            throw new Error('Invalid URL: unable to extract driveid');
+        }
         const page = await initBrowserPage()
-        await goAistudio(page)
-        const res = await downloadCode(page)
-        const chatDomContent = await getChatDomContent(page, true, true)
-        return res
+        await goAistudio(page, driveid)
+        const uuid = uuidv4()
+        const res = await downloadCode(page, uuid)
+        await axios.post(`${PREVIEW_URL}/api/buildcode`, { data: {
+            fileName: res?.fileName,
+            targetPath: res?.targetPath,
+            uuid: uuid,
+            driveid: data.id
+        } })
+        ctx.body = {
+            success: true,
+            message: 'Deploy with code request received',
+            data: res,
+            url: `preview?id=${uuid}`
+        }
+        // const chatDomContent = await getChatDomContent(page, true, true)
     }catch(err) {
         console.error('[GoogleStudio] Error:', err);
         ctx.status = 500;
