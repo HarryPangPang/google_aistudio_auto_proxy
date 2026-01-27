@@ -212,10 +212,10 @@ router.post('/api/initChatContent', async (ctx) => {
     }
 })
 // 下载代码
-router.get('/api/download', async (ctx) => {
-    const { url } = ctx.request.body;
+router.post('/api/download', async (ctx) => {
+    const { data } = ctx.request.body;
+    const url = data;
     console.log(`[GoogleStudio] Received download request for: ${url}`);
-
     try {
         const driveid = url.match(/\/apps\/drive\/([^?/]+)/)?.[1];
         if (!driveid) {
