@@ -92,10 +92,10 @@ const initChatContent = async (page, prompt) => {
     const currentUrl = page.url();
     if (!/\/apps\/drive\/[^?]+/.test(currentUrl)) {
       // 先等到 temp 或 drive 任意一个出现
-      await page.waitForURL(/\/apps\/(temp|drive)\//, { timeout: 1000 * 60 * 2 });
+      await page.waitForURL(/\/apps\/(temp|drive)\//, { timeout: 1000 * 60 * 60 });
       // 如果还没到 drive，再单独等 drive（短一些）
       if (!/\/apps\/drive\/[^?]+/.test(page.url())) {
-        await page.waitForURL(/\/apps\/drive\/[^?]+/, { timeout: 1000 * 60 * 2 });
+        await page.waitForURL(/\/apps\/drive\/[^?]+/, { timeout: 1000 * 60 * 60 });
       }
     }
     await checkFatalError();
@@ -104,7 +104,7 @@ const initChatContent = async (page, prompt) => {
 
   // 等待运行状态结束（同 sendChatMsg 逻辑）
   try {
-    await page.locator('button .running-icon').waitFor({ state: 'visible', timeout: 5000 });
+    await page.locator('button .running-icon').waitFor({ state: 'visible', timeout: 1000 * 60 });
     console.log('[GoogleStudio] Generation running...');
   } catch (e) {
     console.log('[GoogleStudio] Generation might have finished quickly or running state missed.');
