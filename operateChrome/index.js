@@ -45,11 +45,18 @@ const initBrowserPage = async () => {
   return page;
 }
 
-const initChatContent = async (page, prompt) => {
+const initChatContent = async (page, prompt, modelLabel) => {
   tasks++;
   try {
     await page.goto(AI_STUDIO_HOME_URL);
     await page.waitForLoadState('networkidle', { timeout: 1000 * 60 * 5 });
+
+    // 在输入 prompt 之前先选择模型
+    if (modelLabel) {
+      console.log('Selecting model before creating chat...');
+      await selectModel(page, modelLabel);
+    }
+
     // 先找到输入框，然后输入promot，然后点击Build按钮
     console.log('开始初始化聊天内容...');
     const errorSelector = '.error-title';
@@ -462,7 +469,7 @@ const getChatDomContent = async (page, needClose, needWait) => {
   }
 }
 
-const sendChatMsg = async (page, prompt, needClose) => {
+const sendChatMsg = async (page, prompt, needClose, modelLabel) => {
   tasks++;
   const close = () => {
     if (needClose) {
@@ -471,6 +478,7 @@ const sendChatMsg = async (page, prompt, needClose) => {
     }
   }
   try {
+    // sendChatMsg 保持原有逻辑，不切换模型（根据需求）
     await page.waitForLoadState('networkidle', { timeout: 1000 * 60 * 5 });
     await page.waitForSelector('.output-container', { state: 'visible', timeout: 1000 * 60 * 5 });
     console.log('output-container元素已出现');
@@ -500,6 +508,93 @@ const sendChatMsg = async (page, prompt, needClose) => {
     tasks--
     close()
     console.log('[GoogleStudio] Generation might have finished quickly or running state missed.');
+  }
+}
+
+// 选择模型
+const selectModel = async (page, modelLabel) => {
+  if (!modelLabel) {
+    console.log('No model label provided, skipping model selection');
+    return;
+  }
+
+  console.log(`Checking if current model is: ${modelLabel}`);
+
+  try {
+    // 1. 检查当前模型是否已经是目标模型
+    const currentModelName = await page.locator('span.model-button-name').first().innerText();
+    console.log(`Current model: ${currentModelName}`);
+
+    if (currentModelName.trim() === modelLabel.trim()) {
+      console.log('Model already selected, no need to change');
+      return;
+    }
+
+    console.log(`Need to change model from "${currentModelName}" to "${modelLabel}"`);
+
+    // 2. 点击 model button 打开设置抽屉
+    const modelButton = page.locator('button.model-button, button[iconname="settings"].model-button').first();
+    await modelButton.waitFor({ state: 'visible', timeout: 10000 });
+    await modelButton.click();
+    console.log('Clicked model settings button');
+
+    // 3. 等待抽屉打开，找到 model selector
+    await page.waitForTimeout(500);
+    const modelSelectorField = page.locator('#mat-mdc-dialog-2 mat-dialog-content ms-settings-model-selector mat-form-field, mat-dialog-content ms-settings-model-selector mat-form-field').first();
+    await modelSelectorField.waitFor({ state: 'visible', timeout: 10000 });
+    console.log('Found model selector field');
+
+    // 4. 点击 mat-form-field 打开下拉菜单
+    await modelSelectorField.click();
+    await page.waitForTimeout(500);
+    console.log('Clicked model selector to open dropdown');
+
+    // 5. 等待 popover 出现并选择目标模型
+    const panel = page.locator('#mat-select-0-panel, [role="listbox"]').first();
+    await panel.waitFor({ state: 'visible', timeout: 10000 });
+    console.log('Dropdown panel opened');
+
+    // 6. 在下拉菜单中找到对应 label 的选项
+    const option = page.locator(`mat-option:has-text("${modelLabel}"), [role="option"]:has-text("${modelLabel}")`).first();
+    await option.waitFor({ state: 'visible', timeout: 10000 });
+    await option.click();
+    console.log(`Selected model: ${modelLabel}`);
+
+    // 7. 等待下拉菜单关闭
+    await page.waitForTimeout(300);
+    await panel.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {
+      console.log('Dropdown panel still visible, continuing...');
+    });
+
+    // 8. 关闭设置抽屉 - 使用更简单的选择器，因为关闭按钮在抽屉打开时就已存在
+    const closeButton = page.locator('mat-dialog-container button, button[mat-dialog-close]').first();
+    // 直接点击，不需要长时间等待，因为按钮已经存在
+    if (await closeButton.isVisible()) {
+      await closeButton.click();
+      console.log('Closed settings drawer');
+    } else {
+      console.log('Close button not visible, trying alternative selector');
+      const altCloseButton = page.locator('mat-dialog-container [aria-label="Close"]').first();
+      await altCloseButton.click();
+      console.log('Closed settings drawer with alternative selector');
+    }
+
+    // 9. 等待抽屉关闭
+    await page.waitForTimeout(500);
+    console.log('Model selection completed');
+
+  } catch (error) {
+    console.error('Error selecting model:', error.message);
+    // 尝试关闭可能打开的对话框
+    try {
+      const closeButton = page.locator('button[aria-label="Close"], button.close-button, mat-dialog-container button').first();
+      if (await closeButton.isVisible()) {
+        await closeButton.click();
+      }
+    } catch (e) {
+      // Ignore error when trying to close
+    }
+    throw error;
   }
 }
 

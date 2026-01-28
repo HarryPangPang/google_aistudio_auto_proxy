@@ -188,10 +188,10 @@ router.get('/api/chatcontent', async(ctx)=>{
 })
 // 发送聊天消息
 router.post('/api/chatmsg', async(ctx)=>{
-    const { driveid, prompt } = ctx.request.body;
+    const { driveid, prompt, modelLabel, modelValue } = ctx.request.body;
     const page = await initBrowserPage()
     await goAistudio(page, driveid)
-    await sendChatMsg(page, prompt)
+    await sendChatMsg(page, prompt, false, modelLabel)
     const chatDomContent = await getChatDomContent(page, true)
     ctx.body = {
         success: true,
@@ -202,9 +202,9 @@ router.post('/api/chatmsg', async(ctx)=>{
 })
 
 router.post('/api/initChatContent', async (ctx) => {
-    const {prompt} = ctx.request.body;
+    const { prompt, modelLabel, modelValue } = ctx.request.body;
     const page = await initBrowserPage()
-    const res = await initChatContent(page, prompt)
+    const res = await initChatContent(page, prompt, modelLabel)
     ctx.body = {
         success: true,
         message: 'Aistudio initialized',
