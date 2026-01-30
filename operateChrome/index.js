@@ -17,7 +17,7 @@ let tasks = 0; // 存储任务数量
 //   }
 // }, 1000 * 60 * 5)
 
-const initializeBrowser = async () => {}
+const initializeBrowser = async () => { }
 
 const initBrowserPage = async () => {
   // 如果浏览器上下文已经存在，直接返回一个新的页面
@@ -45,7 +45,7 @@ const initBrowserPage = async () => {
   return page;
 }
 
-const initChatContent = async (page, prompt, modelLabel) => {
+const initChatContent = async (page, prompt, modelLabel, auto) => {
   tasks++;
   try {
     await page.goto(AI_STUDIO_HOME_URL);
@@ -105,25 +105,26 @@ const initChatContent = async (page, prompt, modelLabel) => {
         await page.waitForURL(/\/apps\/drive\/[^?]+/, { timeout: 1000 * 60 * 60 });
       }
     }
+    console.log('导航到 drive 页面完成...');
     await checkFatalError();
 
     // 等待运行状态结束（同 sendChatMsg 逻辑）
-
-  // 等待运行状态结束（同 sendChatMsg 逻辑）
-  try {
-    await page.locator('button .running-icon').waitFor({ state: 'visible', timeout: 1000 * 60 });
-    console.log('[GoogleStudio] Generation running...');
-  } catch (e) {
-    console.log('[GoogleStudio] Generation might have finished quickly or running state missed.');
-  }    
-    await checkFatalError();
-    await page.locator('button .running-icon').waitFor({ state: 'detached', timeout: 300000 });
+    const runningIcon = page.locator('button .running-icon');
+    console.log('[GoogleStudio] Waiting generation state...');
+    try {
+      // 最多等 5 秒，看它会不会出现
+      await runningIcon.waitFor({ state: 'visible', timeout: 5000 });
+      console.log('[GoogleStudio] Generation started');
+      // 出现过才等结束
+      await runningIcon.waitFor({ state: 'hidden', timeout: 300000 });
+      console.log('[GoogleStudio] Generation finished');
+    } catch {
+      console.log('[GoogleStudio] No running state detected, probably finished instantly');
+    }
     console.log('[GoogleStudio] Generation complete. Fetching chat content...');
-    await page.waitForTimeout(1000); // Stabilization
-
+    await page.waitForTimeout(500); // Stabilization
     await checkFatalError();
-    console.log('page.url()', page.url());
-    const chatDomContent = await getChatDomContent(page, true);
+    const chatDomContent = await getChatDomContent(page, false);
     console.log('chatDomContent', chatDomContent);
     const finalUrl = page.url();
     const driveIdMatch = finalUrl.match(/\/apps\/drive\/([^?]+)/);

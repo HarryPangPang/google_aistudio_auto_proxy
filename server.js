@@ -5,16 +5,16 @@ const cors = require('@koa/cors');
 const axios = require('axios');
 const AdmZip = require('adm-zip');
 const { v4: uuidv4 } = require('uuid');
-const { 
-    initBrowserPage, 
-    goAistudio, 
+const {
+    initBrowserPage,
+    goAistudio,
     downloadCode,
     getChatDomContent,
     sendChatMsg,
     initChatContent,
     initializeBrowser
- } = require('./operateChrome/index');
- const { PREVIEW_URL } = require('./constant');
+} = require('./operateChrome/index');
+const { PREVIEW_URL } = require('./constant');
 
 const app = new Koa();
 const router = new Router();
@@ -24,7 +24,7 @@ app.use(cors());
 app.use(bodyParser());
 initializeBrowser()
 
-const initBrowser = async ()=>{
+const initBrowser = async () => {
 
 }
 
@@ -34,11 +34,11 @@ router.post('/api/task', async (ctx) => {
 
     try {
         const { page } = await initBrowser();
-        
+
         console.log('[GoogleStudio] Waiting for input...');
         const input = page.locator('textarea').first(); // Or specific selector
         await input.waitFor({ state: 'visible', timeout: 10000 });
-        
+
         // 2. Input Prompt
         await input.fill(prompt);
         await page.waitForTimeout(500);
@@ -51,21 +51,21 @@ router.post('/api/task', async (ctx) => {
         } else {
             await input.press('Enter');
         }
-        
+
         console.log('[GoogleStudio] Prompt sent. Waiting for generation...');
-        
+
         // Wait for "Run" button to show the running icon
         try {
             await page.locator('button .running-icon').waitFor({ state: 'visible', timeout: 5000 });
             console.log('[GoogleStudio] Generation running...');
-        } catch(e) {
+        } catch (e) {
             console.log('[GoogleStudio] Generation might have finished quickly or running state missed.');
         }
 
         // Wait for the running icon to disappear (Completion)
         // Set a long timeout for generation
         await page.locator('button .running-icon').waitFor({ state: 'detached', timeout: 300000 });
-        
+
         // Optional: Wait for "Restore" button to ensure checkpoint is saved
         // await page.locator('button[aria-label="Restore code from this checkpoint"]').waitFor({ state: 'visible', timeout: 10000 });
 
@@ -93,19 +93,19 @@ router.post('/api/task', async (ctx) => {
         if (!downloadBtn) {
             console.log('[GoogleStudio] Download button not visible, trying scroll...');
             // Scroll logic
-             await page.evaluate(() => {
+            await page.evaluate(() => {
                 const buttons = document.querySelectorAll('button');
                 buttons.forEach(btn => {
-                  if (btn.getAttribute('aria-label')?.includes('下载') || 
-                      btn.getAttribute('iconname') === 'download' ||
-                      btn.textContent?.includes('下载')) {
-                    btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  }
+                    if (btn.getAttribute('aria-label')?.includes('下载') ||
+                        btn.getAttribute('iconname') === 'download' ||
+                        btn.textContent?.includes('下载')) {
+                        btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
                 });
-              });
-              await page.waitForTimeout(1000);
-              // Try again
-              for (const selector of downloadSelectors) {
+            });
+            await page.waitForTimeout(1000);
+            // Try again
+            for (const selector of downloadSelectors) {
                 const btn = page.locator(selector).first();
                 if (await btn.isVisible()) {
                     downloadBtn = btn;
@@ -117,12 +117,12 @@ router.post('/api/task', async (ctx) => {
         if (!downloadBtn) {
             throw new Error('Download button not found after generation.');
         }
-        
+
         // Setup download listener BEFORE clicking
         const downloadPromise = page.waitForEvent('download', { timeout: 60000 });
-        
+
         await downloadBtn.click();
-        
+
         const download = await downloadPromise;
         const downloadPath = await download.path();
         console.log(`[GoogleStudio] Downloaded to ${downloadPath}`);
@@ -135,24 +135,24 @@ router.post('/api/task', async (ctx) => {
         // Find the root folder inside zip if any
         // Usually zips have "ProjectName/src/..." structure or just flat.
         // We need to flatten it or respect structure.
-        
+
         zipEntries.forEach(entry => {
             if (entry.isDirectory) return;
-            
+
             // Normalize path: remove leading folder if it exists and is a common root
             // For simplicity, we keep full path but strip the top-level dir if it looks like a project container
             let entryPath = entry.entryName;
             const parts = entryPath.split('/');
             if (parts.length > 1 && !entryPath.startsWith('src') && !entryPath.startsWith('public')) {
-                 // Heuristic: if top folder is not src/public, maybe strip it? 
-                 // Actually, Preview service handles paths well. Let's just pass it.
-                 // But wait, if it's "MyProject/src/App.tsx", we want "src/App.tsx"?
-                 // Let's strip the first segment if it seems like a container.
-                 if (!['src', 'public', 'package.json', 'vite.config.ts', 'index.html'].includes(parts[0])) {
-                     entryPath = parts.slice(1).join('/');
-                 }
+                // Heuristic: if top folder is not src/public, maybe strip it? 
+                // Actually, Preview service handles paths well. Let's just pass it.
+                // But wait, if it's "MyProject/src/App.tsx", we want "src/App.tsx"?
+                // Let's strip the first segment if it seems like a container.
+                if (!['src', 'public', 'package.json', 'vite.config.ts', 'index.html'].includes(parts[0])) {
+                    entryPath = parts.slice(1).join('/');
+                }
             }
-            
+
             files[entryPath] = entry.getData().toString('utf8');
         });
 
@@ -160,10 +160,10 @@ router.post('/api/task', async (ctx) => {
         console.log('[GoogleStudio] Uploading to Preview Service...');
         const deployRes = await axios.post(`${PREVIEW_URL}/api/deploy`, { files });
 
-        ctx.body = { 
-            success: true, 
+        ctx.body = {
+            success: true,
             message: 'Task completed',
-            deploy: deployRes.data 
+            deploy: deployRes.data
         };
 
     } catch (err) {
@@ -173,12 +173,12 @@ router.post('/api/task', async (ctx) => {
     }
 });
 // 获取聊天内容
-router.get('/api/chatcontent', async(ctx)=>{
-    const {driveid} = ctx.query;
+router.get('/api/chatcontent', async (ctx) => {
+    const { driveid } = ctx.query;
     const page = await initBrowserPage()
-    await goAistudio(page,driveid)
+    await goAistudio(page, driveid)
     // 增加等待时间，防止页面加载过快导致获取不到内容
-    await page.waitForTimeout(2000); 
+    await page.waitForTimeout(2000);
     const chatDomContent = await getChatDomContent(page, true)
     ctx.body = {
         success: true,
@@ -187,17 +187,28 @@ router.get('/api/chatcontent', async(ctx)=>{
     }
 })
 // 发送聊天消息
-router.post('/api/chatmsg', async(ctx)=>{
+router.post('/api/chatmsg', async (ctx) => {
     const { driveid, prompt, modelLabel, modelValue } = ctx.request.body;
     const page = await initBrowserPage()
     await goAistudio(page, driveid)
     await sendChatMsg(page, prompt, false, modelLabel)
     const chatDomContent = await getChatDomContent(page, true)
+    const uuid = uuidv4()
+    const res = await downloadCode(page, uuid)
+    await axios.post(`${PREVIEW_URL}/api/buildcode`, {
+        data: {
+            fileName: res?.fileName,
+            targetPath: res?.targetPath,
+            uuid: uuid,
+            driveid: data.id
+        }
+    })
     ctx.body = {
         success: true,
         message: 'Chat content fetched',
         chatDomContent: chatDomContent,
-        driveid
+        driveid,
+        url: `preview?id=${uuid}`
     }
 })
 
@@ -205,10 +216,22 @@ router.post('/api/initChatContent', async (ctx) => {
     const { prompt, modelLabel, modelValue } = ctx.request.body;
     const page = await initBrowserPage()
     const res = await initChatContent(page, prompt, modelLabel)
+    const uuid = uuidv4()
+    // 这次要直接部署
+    const resp = await downloadCode(page, uuid)
+    await axios.post(`${PREVIEW_URL}/api/buildcode`, {
+        data: {
+            fileName: resp?.fileName,
+            targetPath: resp?.targetPath,
+            uuid: uuid,
+            driveid: res.driveid
+        }
+    })
     ctx.body = {
         success: true,
         message: 'Aistudio initialized',
-        data: res
+        data: res,
+        url: `preview?id=${uuid}`
     }
 })
 // 下载代码
@@ -225,12 +248,14 @@ router.post('/api/download', async (ctx) => {
         await goAistudio(page, driveid)
         const uuid = uuidv4()
         const res = await downloadCode(page, uuid)
-        await axios.post(`${PREVIEW_URL}/api/buildcode`, { data: {
-            fileName: res?.fileName,
-            targetPath: res?.targetPath,
-            uuid: uuid,
-            driveid: data.id
-        } })
+        await axios.post(`${PREVIEW_URL}/api/buildcode`, {
+            data: {
+                fileName: res?.fileName,
+                targetPath: res?.targetPath,
+                uuid: uuid,
+                driveid: data.id
+            }
+        })
         ctx.body = {
             success: true,
             message: 'Deploy with code request received',
@@ -238,7 +263,7 @@ router.post('/api/download', async (ctx) => {
             url: `preview?id=${uuid}`
         }
         // const chatDomContent = await getChatDomContent(page, true, true)
-    }catch(err) {
+    } catch (err) {
         console.error('[GoogleStudio] Error:', err);
         ctx.status = 500;
         ctx.body = { error: err.message };
@@ -254,12 +279,14 @@ router.post('/api/deploywithcode', async (ctx) => {
         await goAistudio(page, data.id)
         const uuid = uuidv4()
         const res = await downloadCode(page, uuid)
-        await axios.post(`${PREVIEW_URL}/api/buildcode`, { data: {
-            fileName: res?.fileName,
-            targetPath: res?.targetPath,
-            uuid: uuid,
-            driveid: data.id
-        } })
+        await axios.post(`${PREVIEW_URL}/api/buildcode`, {
+            data: {
+                fileName: res?.fileName,
+                targetPath: res?.targetPath,
+                uuid: uuid,
+                driveid: data.id
+            }
+        })
         ctx.body = {
             success: true,
             message: 'Deploy with code request received',
