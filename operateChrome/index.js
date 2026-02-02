@@ -668,6 +668,241 @@ const selectModel = async (page, modelLabel) => {
   }
 }
 
+/**
+ * 流式监控聊天内容变化
+ * @param {Page} page - Playwright 页面对象
+ * @param {Function} onContentChange - 内容变化回调函数
+ * @param {number} interval - 监控间隔（毫秒），默认500ms
+ * @returns {Function} 停止监控的函数
+ */
+const streamChatContent = async (page, onContentChange, interval = 500) => {
+  let lastContent = '';
+  let isMonitoring = true;
+  let monitorInterval;
+
+  const monitor = async () => {
+    if (!isMonitoring) return;
+
+    try {
+      // 等待 output-container 元素出现
+      const container = await page.locator('.output-container').first();
+      const isVisible = await container.isVisible().catch(() => false);
+
+      if (!isVisible) {
+        return;
+      }
+
+      // 获取当前内容
+      const content = await page.evaluate(() => {
+        const container = document.querySelector('.output-container');
+        if (!container) return '';
+
+        const clone = container.cloneNode(true);
+
+        // 移除所有注释节点
+        const removeComments = (node) => {
+          const children = node.childNodes;
+          for (let i = children.length - 1; i >= 0; i--) {
+            const child = children[i];
+            if (child.nodeType === 8) {
+              node.removeChild(child);
+            } else if (child.nodeType === 1) {
+              removeComments(child);
+            }
+          }
+        };
+        removeComments(clone);
+
+        // 移除所有元素的 _ngcontent-* 属性
+        const allElements = clone.querySelectorAll('*');
+        allElements.forEach(el => {
+          Array.from(el.attributes).forEach(attr => {
+            if (attr.name.startsWith('_ngcontent-') || attr.name.startsWith('_nghost-ng-')) {
+              el.removeAttribute(attr.name);
+            }
+          });
+        });
+
+        return clone.innerHTML;
+      });
+
+      // 如果内容发生变化，调用回调函数
+      if (content && content !== lastContent) {
+        lastContent = content;
+        onContentChange(content);
+      }
+    } catch (error) {
+      console.error('[StreamMonitor] Error:', error.message);
+    }
+  };
+
+  // 启动定时监控
+  monitorInterval = setInterval(monitor, interval);
+
+  // 立即执行一次
+  monitor();
+
+  // 返回停止监控的函数
+  return () => {
+    isMonitoring = false;
+    if (monitorInterval) {
+      clearInterval(monitorInterval);
+    }
+  };
+};
+
+/**
+ * 发送聊天消息（流式版本）
+ * @param {Page} page - Playwright 页面对象
+ * @param {string} prompt - 用户输入的 prompt
+ * @param {Function} onContentChange - 内容变化回调函数
+ * @param {string} modelLabel - 模型标签
+ * @returns {Promise<Object>} 返回最终的 driveid 和停止监控的函数
+ */
+const sendChatMsgStream = async (page, prompt, onContentChange, modelLabel) => {
+  tasks++;
+  try {
+    await page.waitForLoadState('networkidle', { timeout: 1000 * 60 * 5 });
+    await page.waitForSelector('.output-container', { state: 'visible', timeout: 1000 * 60 * 5 });
+
+    console.log('[GoogleStudio] Starting stream monitoring...');
+
+    // 启动内容监控
+    const stopMonitoring = await streamChatContent(page, onContentChange, 500);
+
+    console.log('[GoogleStudio] Waiting for input...');
+    const input = page.locator('textarea').first();
+    await input.waitFor({ state: 'visible', timeout: 10000 });
+    await input.fill(prompt);
+    await page.waitForTimeout(500);
+
+    const sendButton = page.locator('button[aria-label="Run"], button:has-text("Run"), button.send-button').first();
+    if (await sendButton.isVisible()) {
+      await sendButton.click();
+    } else {
+      await input.press('Enter');
+    }
+
+    console.log('[GoogleStudio] Prompt sent. Monitoring generation...');
+
+    // 等待生成开始
+    try {
+      await page.locator('button .running-icon').waitFor({ state: 'visible', timeout: 5000 });
+      console.log('[GoogleStudio] Generation running...');
+    } catch {
+      console.log('[GoogleStudio] Generation might have started quickly');
+    }
+
+    // 等待生成完成
+    try {
+      await page.locator('button .running-icon').waitFor({ state: 'detached', timeout: 300000 });
+      console.log('[GoogleStudio] Generation complete.');
+    } catch (error) {
+      console.log('[GoogleStudio] Generation timeout or error:', error.message);
+    }
+
+    // 等待一小段时间确保最后的内容更新
+    await page.waitForTimeout(1000);
+
+    tasks--;
+    return { stopMonitoring };
+  } catch (error) {
+    tasks--;
+    console.error('[GoogleStudio] Error in sendChatMsgStream:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * 初始化聊天内容（流式版本）
+ * @param {Page} page - Playwright 页面对象
+ * @param {string} prompt - 用户输入的 prompt
+ * @param {string} modelLabel - 模型标签
+ * @param {Function} onContentChange - 内容变化回调函数
+ * @returns {Promise<Object>} 返回 driveid 和停止监控的函数
+ */
+const initChatContentStream = async (page, prompt, modelLabel, onContentChange) => {
+  tasks++;
+  try {
+    await page.goto(AI_STUDIO_HOME_URL);
+    await page.waitForLoadState('networkidle', { timeout: 1000 * 60 * 5 });
+
+    if (modelLabel) {
+      console.log('Selecting model before creating chat...');
+      await selectModel(page, modelLabel);
+    }
+
+    console.log('开始初始化聊天内容（流式）...');
+
+    const errorMonitor = createErrorMonitor(page);
+
+    const input = page.locator('textarea[aria-label="Enter a prompt to generate an app"], textarea.prompt-textarea, textarea').first();
+    await input.waitFor({ state: 'visible', timeout: 30000 });
+    await input.fill(prompt);
+    await page.waitForTimeout(300);
+    console.log('输入框输入完成...');
+
+    errorMonitor.startMonitoring();
+
+    const buildButton = page.locator('button.ms-button-primary:has-text("Build"), button:has-text("Build")').first();
+    await buildButton.waitFor({ state: 'visible', timeout: 300000 });
+    await page.waitForFunction(() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const btn = buttons.find((b) => {
+        const text = (b.textContent || '').trim();
+        return b.classList.contains('ms-button-primary') || text === 'Build';
+      });
+      return btn && btn.getAttribute('aria-disabled') !== 'true';
+    }, { timeout: 30000 });
+    await buildButton.click();
+    await page.waitForTimeout(500);
+    await errorMonitor.check();
+
+    const currentUrl = page.url();
+    if (!/\/apps\/drive\/[^?]+/.test(currentUrl)) {
+      await page.waitForURL(/\/apps\/(temp|drive)\//, { timeout: 1000 * 60 * 60 });
+      if (!/\/apps\/drive\/[^?]+/.test(page.url())) {
+        await page.waitForURL(/\/apps\/drive\/[^?]+/, { timeout: 1000 * 60 * 60 });
+      }
+    }
+    console.log('导航到 drive 页面完成...');
+    errorMonitor.stopMonitoring();
+
+    // 启动流式监控
+    console.log('[GoogleStudio] Starting stream monitoring...');
+    const stopMonitoring = await streamChatContent(page, onContentChange, 500);
+
+    // 等待运行状态结束
+    const runningIcon = page.locator('button .running-icon');
+    console.log('[GoogleStudio] Waiting generation state...');
+    try {
+      await runningIcon.waitFor({ state: 'visible', timeout: 5000 });
+      console.log('[GoogleStudio] Generation started');
+      await runningIcon.waitFor({ state: 'hidden', timeout: 300000 });
+      console.log('[GoogleStudio] Generation finished');
+    } catch {
+      console.log('[GoogleStudio] No running state detected, probably finished instantly');
+    }
+
+    console.log('[GoogleStudio] Generation complete.');
+    await page.waitForTimeout(500);
+
+    const finalUrl = page.url();
+    const driveIdMatch = finalUrl.match(/\/apps\/drive\/([^?]+)/);
+    const driveid = driveIdMatch ? driveIdMatch[1] : '';
+
+    tasks--;
+    return {
+      driveid,
+      stopMonitoring
+    };
+  } catch (error) {
+    tasks--;
+    console.error('初始化聊天内容失败:', error.message);
+    throw error;
+  }
+};
+
 module.exports = {
   goAistudio: goAistudio,
   initBrowserPage: initBrowserPage,
@@ -677,5 +912,8 @@ module.exports = {
   getChatDomContent: getChatDomContent,
   sendChatMsg: sendChatMsg,
   initChatContent: initChatContent,
-  initializeBrowser: initializeBrowser
+  initializeBrowser: initializeBrowser,
+  streamChatContent: streamChatContent,
+  sendChatMsgStream: sendChatMsgStream,
+  initChatContentStream: initChatContentStream
 }

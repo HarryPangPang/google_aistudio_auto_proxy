@@ -12,7 +12,9 @@ const {
     getChatDomContent,
     sendChatMsg,
     initChatContent,
-    initializeBrowser
+    initializeBrowser,
+    sendChatMsgStream,
+    initChatContentStream
 } = require('./operateChrome/index');
 const { PREVIEW_URL } = require('./constant');
 
@@ -238,6 +240,146 @@ router.post('/api/initChatContent', async (ctx) => {
         message: 'Aistudio initialized',
         data: res,
         url: `preview?id=${uuid}`
+    }
+})
+
+// 初始化聊天内容（流式版本）
+router.get('/api/initChatContent/stream', async (ctx) => {
+    const { prompt, modelLabel } = ctx.query;
+
+    // 设置 SSE 响应头
+    ctx.set({
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+    });
+
+    ctx.status = 200;
+
+    const stream = new require('stream').PassThrough();
+    ctx.body = stream;
+
+    let stopMonitoring = null;
+    let driveid = '';
+    let uuid = '';
+    let deployUrl = '';
+
+    try {
+        const page = await initBrowserPage();
+
+        // 启动流式初始化
+        const result = await initChatContentStream(page, prompt, modelLabel, (content) => {
+            // 发送内容更新事件
+            stream.write(`event: content\ndata: ${JSON.stringify({ content })}\n\n`);
+        });
+
+        stopMonitoring = result.stopMonitoring;
+        driveid = result.driveid;
+
+        // 发送 driveid 事件
+        stream.write(`event: driveid\ndata: ${JSON.stringify({ driveid })}\n\n`);
+
+        // 生成完成后下载代码
+        uuid = uuidv4();
+        const resp = await downloadCode(page, uuid);
+
+        // 构建代码
+        await axios.post(`${PREVIEW_URL}/api/buildcode`, {
+            data: {
+                fileName: resp?.fileName,
+                targetPath: resp?.targetPath,
+                uuid: uuid,
+                driveid: driveid
+            }
+        });
+
+        deployUrl = `preview?id=${uuid}`;
+
+        // 发送完成事件
+        stream.write(`event: complete\ndata: ${JSON.stringify({
+            driveid,
+            url: deployUrl,
+            success: true
+        })}\n\n`);
+
+        stream.end();
+    } catch (error) {
+        console.error('[Stream Error]:', error.message);
+        stream.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
+        stream.end();
+    } finally {
+        if (stopMonitoring) {
+            stopMonitoring();
+        }
+    }
+})
+
+// 发送聊天消息（流式版本）
+router.get('/api/chatmsg/stream', async (ctx) => {
+    const { driveid, prompt, modelLabel } = ctx.query;
+
+    // 设置 SSE 响应头
+    ctx.set({
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+    });
+
+    ctx.status = 200;
+
+    const stream = new require('stream').PassThrough();
+    ctx.body = stream;
+
+    let stopMonitoring = null;
+    let uuid = '';
+    let deployUrl = '';
+
+    try {
+        const page = await initBrowserPage();
+        await goAistudio(page, driveid);
+
+        // 启动流式发送消息
+        const result = await sendChatMsgStream(page, prompt, (content) => {
+            // 发送内容更新事件
+            stream.write(`event: content\ndata: ${JSON.stringify({ content })}\n\n`);
+        }, modelLabel);
+
+        stopMonitoring = result.stopMonitoring;
+
+        // 生成完成后下载代码
+        uuid = uuidv4();
+        const resp = await downloadCode(page, uuid);
+
+        // 构建代码
+        await axios.post(`${PREVIEW_URL}/api/buildcode`, {
+            data: {
+                fileName: resp?.fileName,
+                targetPath: resp?.targetPath,
+                uuid: uuid,
+                driveid: driveid
+            }
+        });
+
+        deployUrl = `preview?id=${uuid}`;
+
+        // 发送完成事件
+        stream.write(`event: complete\ndata: ${JSON.stringify({
+            driveid,
+            url: deployUrl,
+            success: true
+        })}\n\n`);
+
+        stream.end();
+    } catch (error) {
+        console.error('[Stream Error]:', error.message);
+        stream.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
+        stream.end();
+    } finally {
+        if (stopMonitoring) {
+            stopMonitoring();
+        }
     }
 })
 // 下载代码
