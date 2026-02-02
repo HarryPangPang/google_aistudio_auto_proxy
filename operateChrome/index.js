@@ -473,15 +473,16 @@ const runInstallBuild = async (sourceDir) => {
 }
 
 const getChatDomContent = async (page, needClose, needWait) => {
-  tasks++;
-  try {
-    const close = () => {
+      const close = () => {
       if (needClose) {
         page.close()
         page = null
       }
 
     }
+  tasks++;
+  try {
+
     if (needWait) {
       await page.waitForLoadState('networkidle', { timeout: 1000 * 60 * 5 });
     }

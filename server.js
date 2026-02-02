@@ -200,7 +200,7 @@ router.post('/api/chatmsg', async (ctx) => {
     const page = await initBrowserPage()
     await goAistudio(page, driveid)
     await sendChatMsg(page, prompt, false, modelLabel)
-    const chatDomContent = await getChatDomContent(page, true)
+    const chatDomContent = await getChatDomContent(page, false)
     const uuid = uuidv4()
     const res = await downloadCode(page, uuid)
     await axios.post(`${PREVIEW_URL}/api/buildcode`, {
@@ -208,7 +208,7 @@ router.post('/api/chatmsg', async (ctx) => {
             fileName: res?.fileName,
             targetPath: res?.targetPath,
             uuid: uuid,
-            driveid: data.id
+            driveid: driveid
         }
     })
     ctx.body = {
