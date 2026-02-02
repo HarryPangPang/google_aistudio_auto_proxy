@@ -202,7 +202,6 @@ const initChatContent = async (page, prompt, modelLabel, auto) => {
     };
   } catch (e) {
     // 确保停止错误监控
-    errorMonitor.stopMonitoring();
     console.error('初始化聊天内容失败:', e.message);
     return {
       chatDomContent: '',
