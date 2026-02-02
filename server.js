@@ -16,6 +16,12 @@ const {
 } = require('./operateChrome/index');
 const { PREVIEW_URL } = require('./constant');
 
+// 生成内部服务认证 token（固定的虚拟 token）
+const INTERNAL_SERVICE_TOKEN = 'internal-service-proxy-2024-secret-token-xyz';
+
+// 配置 axios 默认请求头，所有请求都带上 Bearer token
+axios.defaults.headers.common['Authorization'] = `Bearer ${INTERNAL_SERVICE_TOKEN}`;
+
 const app = new Koa();
 const router = new Router();
 const PORT = 1234;

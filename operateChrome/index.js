@@ -19,6 +19,78 @@ let tasks = 0; // 存储任务数量
 
 const initializeBrowser = async () => { }
 
+/**
+ * 创建错误监控器
+ * @param {Page} page - Playwright 页面对象
+ * @param {number} interval - 监控间隔（毫秒），默认500ms
+ * @returns {Object} 包含 check, startMonitoring, stopMonitoring 方法的对象
+ */
+const createErrorMonitor = (page, interval = 500) => {
+  const errorSelector = '.error-container';
+  let errorMonitorInterval = null;
+  let errorDetected = false;
+
+  // 检查是否出现错误
+  const check = async () => {
+    if (errorDetected) return; // 避免重复检测
+
+    try {
+      const errorContainer = page.locator(errorSelector).first();
+      if (await errorContainer.isVisible()) {
+        errorDetected = true;
+        // 尝试获取错误文本
+        const errorTitle = page.locator('.error-title').first();
+        let errorText = 'An internal error occurred.';
+
+        if (await errorTitle.isVisible()) {
+          const text = (await errorTitle.innerText()).trim();
+          if (text) errorText = text;
+        }
+
+        // 停止监控
+        stopMonitoring();
+
+        throw new Error(`AI Studio Error: ${errorText}`);
+      }
+    } catch (err) {
+      // 如果是我们抛出的错误，继续抛出
+      if (err instanceof Error && err.message.startsWith('AI Studio Error:')) {
+        throw err;
+      }
+      // 其他错误（如元素不存在）忽略
+    }
+  };
+
+  // 启动持续错误监控
+  const startMonitoring = () => {
+    if (errorMonitorInterval) return;
+    console.log(`[ErrorMonitor] 启动错误监控，间隔 ${interval}ms`);
+    errorMonitorInterval = setInterval(async () => {
+      try {
+        await check();
+      } catch (err) {
+        // 错误会在主流程中被捕获
+        stopMonitoring();
+      }
+    }, interval);
+  };
+
+  // 停止错误监控
+  const stopMonitoring = () => {
+    if (errorMonitorInterval) {
+      clearInterval(errorMonitorInterval);
+      errorMonitorInterval = null;
+      console.log('[ErrorMonitor] 已停止错误监控');
+    }
+  };
+
+  return {
+    check,
+    startMonitoring,
+    stopMonitoring
+  };
+};
+
 const initBrowserPage = async () => {
   // 如果浏览器上下文已经存在，直接返回一个新的页面
   if (browserContext) {
@@ -59,26 +131,20 @@ const initChatContent = async (page, prompt, modelLabel, auto) => {
 
     // 先找到输入框，然后输入promot，然后点击Build按钮
     console.log('开始初始化聊天内容...');
-    const errorSelector = '.error-title';
-    const checkFatalError = async () => {
-      try {
-        const errorTitle = page.locator(errorSelector).first();
-        if (await errorTitle.isVisible()) {
-          const text = (await errorTitle.innerText()).trim();
-          throw new Error(text || 'An internal error occurred.');
-        }
-      } catch (err) {
-        if (err instanceof Error && err.message) {
-          throw err;
-        }
-      }
-    };
+
+    // 创建错误监控器
+    const errorMonitor = createErrorMonitor(page);
 
     const input = page.locator('textarea[aria-label="Enter a prompt to generate an app"], textarea.prompt-textarea, textarea').first();
     await input.waitFor({ state: 'visible', timeout: 30000 });
     await input.fill(prompt);
     await page.waitForTimeout(300);
     console.log('输入框输入完成...');
+
+    // 启动持续错误监控
+    console.log('启动错误监控...');
+    errorMonitor.startMonitoring();
+
     // Build 按钮（新建场景）
     const buildButton = page.locator('button.ms-button-primary:has-text("Build"), button:has-text("Build")').first();
     await buildButton.waitFor({ state: 'visible', timeout: 300000 });
@@ -92,8 +158,7 @@ const initChatContent = async (page, prompt, modelLabel, auto) => {
     }, { timeout: 30000 });
     await buildButton.click();
     await page.waitForTimeout(500);
-    await checkFatalError();
-
+    await errorMonitor.check();
     // 点击后会先跳到 /apps/temp/xxx，然后再跳到 /apps/drive/xxx
     // 优先等待 drive，如果已经跳转就直接继续，避免长时间阻塞
     const currentUrl = page.url();
@@ -106,7 +171,9 @@ const initChatContent = async (page, prompt, modelLabel, auto) => {
       }
     }
     console.log('导航到 drive 页面完成...');
-    await checkFatalError();
+    // 停止错误监控
+    errorMonitor.stopMonitoring();
+    console.log('点击 Build 按钮完成...');
 
     // 等待运行状态结束（同 sendChatMsg 逻辑）
     const runningIcon = page.locator('button .running-icon');
@@ -123,17 +190,20 @@ const initChatContent = async (page, prompt, modelLabel, auto) => {
     }
     console.log('[GoogleStudio] Generation complete. Fetching chat content...');
     await page.waitForTimeout(500); // Stabilization
-    await checkFatalError();
     const chatDomContent = await getChatDomContent(page, false);
     console.log('chatDomContent', chatDomContent);
     const finalUrl = page.url();
     const driveIdMatch = finalUrl.match(/\/apps\/drive\/([^?]+)/);
     const driveid = driveIdMatch ? driveIdMatch[1] : '';
+
     return {
       chatDomContent,
       driveid
     };
   } catch (e) {
+    // 确保停止错误监控
+    errorMonitor.stopMonitoring();
+    console.error('初始化聊天内容失败:', e.message);
     return {
       chatDomContent: '',
       driveid: ''
